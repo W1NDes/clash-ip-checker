@@ -118,7 +118,7 @@ class CheckerService:
             return f"🔘🔘 {base_name} 【检测失败】"
 
         # 获取emoji前缀
-        pure_emoji = res.get('pure_emoji', '⚪')
+        pure_emoji = res.get('pure_emoji', '🔘')  # 默认🔘表示未知
         shared_emoji = res.get('shared_emoji', '')
         emoji_prefix = f"{pure_emoji}{shared_emoji}" if shared_emoji else pure_emoji
 

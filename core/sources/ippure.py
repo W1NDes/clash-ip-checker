@@ -11,7 +11,7 @@ class IPPureSource(BaseSource):
         url = config.check_url # Default: https://my.123169.xyz/v1/info (Mirror of IPPure)
 
         result = {
-            "pure_emoji": "⚪", "ip_attr": "未知", "ip_src": "未知",
+            "pure_emoji": "🔘", "ip_attr": "未知", "ip_src": "未知",  # 默认🔘表示未知
             "pure_score": "?", "ip": "?", "error": None,
             "shared_emoji": "🔘",  # IPPure没有共享人数数据，用🔘占位
             "shared_users": "N/A"
