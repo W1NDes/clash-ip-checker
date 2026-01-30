@@ -92,26 +92,41 @@ class CheckerService:
         }
 
     def _strip_old_tag(self, name: str) -> str:
-        """去除节点名中已有的检测标注 【...】"""
+        """去除节点名中已有的检测标注 【...】和前缀emoji"""
         import re
-        return re.sub(r'\s*【[^】]*】', '', name).strip()
+        # 先去掉后缀的【...】
+        name = re.sub(r'\s*【[^】]*】', '', name).strip()
+        # 再去掉前缀的emoji（IP质量emoji + 跳过/占位emoji）
+        name = re.sub(r'^[🟢🟡🟠🔴⚫⚪❓❌⏭️🔘]+\s*', '', name).strip()
+        return name
+
+    def _format_skip_name(self, old_name: str) -> str:
+        """格式化被跳过的节点名"""
+        base_name = self._strip_old_tag(old_name)
+        return f"⏭️ {base_name} 【跳过】"
+
+    def _format_switch_fail_name(self, old_name: str) -> str:
+        """格式化切换失败的节点名"""
+        base_name = self._strip_old_tag(old_name)
+        return f"🔘🔘 {base_name} 【切换失败】"
 
     def _format_name(self, old_name: str, res: dict) -> str:
-        # 先去掉已有的标注
+        # 先去掉已有的标注和前缀emoji
         base_name = self._strip_old_tag(old_name)
-        
-        if res["error"]:
-            return f"{base_name} 【❌ 失败】"
-            
-        # Logic from ping0.py might return "full_string" directly?
-        if "full_string" in res and res["full_string"]:
-             # If source provides full formatted string, use it but keep base name
-             # But ping0 returns "【...】"
-             # So we return base_name + full_string
-             return f"{base_name} {res['full_string']}"
 
+        if res["error"]:
+            return f"🔘🔘 {base_name} 【检测失败】"
+
+        # 获取emoji前缀
+        pure_emoji = res.get('pure_emoji', '⚪')
+        shared_emoji = res.get('shared_emoji', '')
+        emoji_prefix = f"{pure_emoji}{shared_emoji}" if shared_emoji else pure_emoji
+
+        # 获取info
         info = f"{res['ip_attr']}|{res['ip_src']}"
-        return f"{base_name} 【{res['pure_emoji']} {info}】"
+
+        # emoji放在节点名前面
+        return f"{emoji_prefix} {base_name} 【{info}】"
 
     async def async_atomic_save(self, data: dict, file_path: str):
         """Async wrapper for atomic save."""
@@ -192,11 +207,21 @@ class CheckerService:
 
                 name = p_config['name']
                 
-                # Filter invalid nodes
+                # Filter invalid nodes - 但仍然添加标记
                 if any(k in name for k in skip_keywords):
+                     # 为跳过的节点添加标记
+                     new_name = self._format_skip_name(name)
+                     p_config['name'] = new_name
+
+                     # Update in proxy-groups
+                     if 'proxy-groups' in yaml_data:
+                         for g in yaml_data['proxy-groups']:
+                             if 'proxies' in g:
+                                 g['proxies'] = [new_name if pn == name else pn for pn in g['proxies']]
+
                      checked_count += 1
                      if progress_cb:
-                        await progress_cb(checked_count, total, f"Skipped: {name}")
+                        await progress_cb(checked_count, total, f"Skipped: {new_name}")
                      continue
 
                 # Use clean name for logging to avoid confusion with old results
@@ -244,10 +269,20 @@ class CheckerService:
                     shared_log = f" | 共享: {res.get('shared_users')}" if res.get('shared_users') and res.get('shared_users') != "N/A" else ""
                     print(f"       => IP: {res['ip']} | 污染度: {res['pure_score']}{shared_log} | {res['ip_attr']} | {res['ip_src']}", flush=True)
                 else:
-                    print(f"[WARN] Could not switch to {name}", flush=True)
+                    # 切换失败，也添加标记
+                    new_name = self._format_switch_fail_name(name)
+                    print(f"[WARN] Could not switch to {name} => {new_name}", flush=True)
+                    p_config['name'] = new_name
+
+                    # Update in proxy-groups
+                    if 'proxy-groups' in yaml_data:
+                        for g in yaml_data['proxy-groups']:
+                            if 'proxies' in g:
+                                g['proxies'] = [new_name if pn == name else pn for pn in g['proxies']]
+
                     checked_count += 1  # 即使失败也要计数，保证进度条准确
                     if progress_cb:
-                        await progress_cb(checked_count, total, f"Error: Could not switch to {display_name}")
+                        await progress_cb(checked_count, total, f"Switch failed: {new_name}")
 
             # Debug: Verify modification before final save? 
             await self.async_atomic_save(yaml_data, file_path) # Force final save

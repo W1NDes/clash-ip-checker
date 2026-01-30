@@ -9,10 +9,12 @@ class IPPureSource(BaseSource):
 
     async def check(self, proxy_url: str, timeout: int = None) -> dict:
         url = config.check_url # Default: https://my.123169.xyz/v1/info (Mirror of IPPure)
-        
+
         result = {
             "pure_emoji": "⚪", "ip_attr": "未知", "ip_src": "未知",
-            "pure_score": "?", "ip": "?", "error": None
+            "pure_score": "?", "ip": "?", "error": None,
+            "shared_emoji": "🔘",  # IPPure没有共享人数数据，用🔘占位
+            "shared_users": "N/A"
         }
         
         proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
