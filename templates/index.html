@@ -208,6 +208,28 @@
         </div>
     </div>
 
+    <!-- Active Tasks Panel -->
+    <div id="active-tasks-panel" class="w-full max-w-3xl mb-6">
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+            <div class="bg-gray-50 dark:bg-gray-900/50 px-4 py-3 flex justify-between items-center border-b border-gray-200 dark:border-gray-700">
+                <div class="flex items-center space-x-2">
+                    <span class="flex h-2 w-2 relative">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                    </span>
+                    <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">进行中的任务 (Active Tasks)</span>
+                </div>
+                <span id="task-count-badge" class="px-2 py-0.5 rounded-full text-xs font-bold bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300">0</span>
+            </div>
+            <div id="active-tasks-list" class="divide-y divide-gray-100 dark:divide-gray-700 max-h-64 overflow-y-auto">
+                <!-- Tasks will be injected here -->
+                <div class="p-4 text-center text-gray-400 dark:text-gray-500 text-sm" id="no-tasks-msg">
+                    暂无进行中的任务
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Live Status Panel (Hidden by default) -->
     <div id="status-panel" class="w-full max-w-3xl hidden space-y-6">
         <!-- Status Header -->
@@ -336,9 +358,81 @@
         // Initialize immediately
         initTheme();
         initConfig(); // Fetch UI config
+        fetchActiveTasks(); // Fetch active tasks
+        setInterval(fetchActiveTasks, 1000); // Refresh every 1 second
 
         // Wait for load to ensure DOM is ready
         window.addEventListener('load', fetchGitHubStars);
+
+        async function fetchActiveTasks() {
+            try {
+                const res = await fetch('/api/tasks');
+                if (!res.ok) return;
+                const data = await res.json();
+                renderActiveTasks(data.tasks);
+            } catch (e) {
+                console.log("Failed to fetch tasks:", e);
+            }
+        }
+
+        function renderActiveTasks(tasks) {
+            const container = document.getElementById('active-tasks-list');
+            const badge = document.getElementById('task-count-badge');
+            const noTasksMsg = document.getElementById('no-tasks-msg');
+
+            badge.innerText = tasks.length;
+
+            if (tasks.length === 0) {
+                container.innerHTML = '<div class="p-4 text-center text-gray-400 dark:text-gray-500 text-sm" id="no-tasks-msg">暂无进行中的任务</div>';
+                return;
+            }
+
+            let html = '';
+            tasks.forEach((task, index) => {
+                const isRunning = task.status === 'running';
+                const progress = task.total > 0 ? Math.round((task.current / task.total) * 100) : 0;
+                const maskedUrl = task.url_masked || `[${task.url_hash?.substring(0, 8) || 'unknown'}]`;
+                const timeSince = formatTimeSince(task.submit_time);
+
+                html += `
+                <div class="p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                    <div class="flex justify-between items-start mb-2">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center space-x-2">
+                                <span class="px-2 py-0.5 rounded text-xs font-bold ${isRunning ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300' : 'bg-yellow-100 dark:bg-yellow-900 text-yellow-600 dark:text-yellow-300'}">
+                                    ${isRunning ? '检测中' : '排队中'}
+                                </span>
+                                <span class="text-xs text-gray-400">${timeSince}</span>
+                            </div>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 truncate mt-1 font-mono">${maskedUrl}</p>
+                        </div>
+                    </div>
+                    ${isRunning ? `
+                    <div class="mt-2">
+                        <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
+                            <span class="truncate max-w-[200px]">${task.message || 'Processing...'}</span>
+                            <span>${task.current} / ${task.total}</span>
+                        </div>
+                        <div class="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                            <div class="h-full bg-blue-500 rounded-full transition-all duration-300" style="width: ${progress}%"></div>
+                        </div>
+                    </div>
+                    ` : ''}
+                </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function formatTimeSince(timestamp) {
+            const seconds = Math.floor(Date.now() / 1000 - timestamp);
+            if (seconds < 60) return `${seconds}秒前`;
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return `${minutes}分钟前`;
+            const hours = Math.floor(minutes / 60);
+            return `${hours}小时前`;
+        }
 
         async function initConfig() {
             try {

@@ -12,6 +12,7 @@ DEFAULT_CONFIG = {
     "skip_keywords": ["剩余", "到期", "有效期", "重置", "官网", "网址", "更新", "公告", "建议"],
     "max_age": 3600, # 秒，缓存最大时间 超过这个时间会重新检查ip否则用缓存
     "max_queue_size": 10, # 最大任务队列数
+    "allow_multiple_tasks_per_user": False, # 是否允许同一用户同时拥有多个任务
 }
 
 class Config:
@@ -75,12 +76,20 @@ class Config:
         env_val = os.getenv("SHOW_ADVANCED_SETTINGS")
         if env_val is not None:
             return env_val.lower() == "true"
-            
+
         # Check config (User put ALL CAPS in yaml)
         if "SHOW_ADVANCED_SETTINGS" in self._config:
             return bool(self._config["SHOW_ADVANCED_SETTINGS"])
-        
+
         return self._config.get("show_advanced_settings", True)
+
+    @property
+    def allow_multiple_tasks_per_user(self):
+        # Env Var > Config > Default
+        env_val = os.getenv("ALLOW_MULTIPLE_TASKS_PER_USER")
+        if env_val is not None:
+            return env_val.lower() == "true"
+        return self._config.get("allow_multiple_tasks_per_user", False)
 
 # Singleton instance
 config = Config()

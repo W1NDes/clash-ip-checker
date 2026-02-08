@@ -117,22 +117,70 @@ async def get_ui_config():
     """Exposes UI configuration based on environment variables or config.yaml."""
     return {"show_advanced_settings": config.show_advanced_settings}
 
+@app.get("/api/tasks")
+async def get_all_tasks():
+    """Get all active tasks (running + queued)."""
+    tasks = []
+    for url, job in job_manager.jobs.items():
+        if job.status in ["queued", "running"]:
+            # Mask URL to prevent leaking subscription links
+            # Only show domain + hash prefix
+            try:
+                parsed = urlparse(url)
+                domain = parsed.netloc or "unknown"
+                url_hash = calc_md5(url)[:8]
+                masked_url = f"{domain} [{url_hash}]"
+            except:
+                masked_url = f"[{calc_md5(url)[:8]}]"
+
+            tasks.append({
+                "url_masked": masked_url,
+                "url_hash": calc_md5(url),
+                "status": job.status,
+                "current": job.current,
+                "total": job.total,
+                "message": job.message,
+                "submit_time": job.submit_time
+            })
+
+    # Sort by submit_time (oldest first)
+    tasks.sort(key=lambda x: x["submit_time"])
+
+    q_info = job_manager.get_queue_info()
+
+    # Mask running_job URL as well
+    running_job_masked = None
+    if q_info["running_job"]:
+        try:
+            parsed = urlparse(q_info["running_job"])
+            domain = parsed.netloc or "unknown"
+            url_hash = calc_md5(q_info["running_job"])[:8]
+            running_job_masked = f"{domain} [{url_hash}]"
+        except:
+            running_job_masked = f"[{calc_md5(q_info['running_job'])[:8]}]"
+
+    return {
+        "tasks": tasks,
+        "queue_size": q_info["queue_size"],
+        "running_job": running_job_masked
+    }
+
 @app.get("/api/status")
 async def get_status_json(url: str = Query(..., description="Subscription URL")):
     """Internal JSON status API."""
     status = job_manager.get_status(url)
     q_info = job_manager.get_queue_info()
-    
+
     # Calculate simple position info
     response = {
         "job_status": status,
         "global_queue_size": q_info["queue_size"],
         "running_job": q_info["running_job"]
     }
-    
+
     if status["status"] == "queued":
         response["message"] = f"In Queue. Total waiting: {q_info['queue_size']}"
-        
+
     return response
 
 @app.get("/check")

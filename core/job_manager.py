@@ -3,6 +3,7 @@ import asyncio
 import time
 from typing import Dict, List, Optional
 from core.checker_service import CheckerService
+from core.config import config
 
 class JobStatus:
     def __init__(self, url: str, request_id: str = None):
@@ -191,13 +192,13 @@ class JobManager:
                  print(f"[INFO] Job {request_id} already active for {url}, skipping duplicate submit", flush=True)
                  if user_ip: self.user_active_tasks[user_ip] = url
                  return
-            
+
             # If request_id differs, cancel the old job first, then overwrite
             print(f"[INFO] Cancelling old job for {url} (Old ID: {existing.request_id}) before starting new one (New ID: {request_id})", flush=True)
             await existing.cancel()  # Signal the worker to stop the old task
 
-        # 2. 用户 IP 并发检查（同一 IP 不能同时运行不同 URL 的任务）
-        if user_ip:
+        # 2. 用户 IP 并发检查（仅在 allow_multiple_tasks_per_user 为 False 时限制）
+        if user_ip and not config.allow_multiple_tasks_per_user:
             current_active_url = self.user_active_tasks.get(user_ip)
             if current_active_url:
                 # Check status
@@ -206,20 +207,25 @@ class JobManager:
                      print(f"[INFO] Auto-cancelling previous task {current_active_url} for user {user_ip} to start {url}", flush=True)
                      await active_job.cancel()
                      # We rely on the worker loop to cleanup user_active_tasks, but that's async.
-                     # We might need to forcefully overwrite user_active_tasks[user_ip] later, 
+                     # We might need to forcefully overwrite user_active_tasks[user_ip] later,
                      # but let's assume update below covers it.
-            
+
             # Update active task
             self.user_active_tasks[user_ip] = url
+        elif user_ip and config.allow_multiple_tasks_per_user:
+            # When multiple tasks are allowed, still track user tasks for reference
+            # But don't limit submissions
+            if user_ip not in self.user_active_tasks:
+                self.user_active_tasks[user_ip] = url
 
         # 3. Create new job status
         job = JobStatus(url, request_id)
         self.jobs[url] = job
-        
+
         # Put dict instead of tuple to support extensible options
         await self.queue.put({
-            "url": url, 
+            "url": url,
             "file_path": file_path,
             "options": options or {}
         })
-        print(f"[INFO] Job submitted for {url} (User: {user_ip})", flush=True)
+        print(f"[INFO] Job submitted for {url} (User: {user_ip}, Multiple Tasks Allowed: {config.allow_multiple_tasks_per_user})", flush=True)

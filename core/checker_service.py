@@ -226,13 +226,13 @@ class CheckerService:
 
                 # Use clean name for logging to avoid confusion with old results
                 display_name = self._strip_old_tag(name)
-                
+
                 # Switch
                 print(f"[INFO] Checking [{i+1}/{total}]: {display_name}", flush=True)
                 if progress_cb:
                     await progress_cb(checked_count, total, f"Checking: {display_name}")
 
-                if await self.clash.switch_proxy(name):
+                if await self.clash.switch_proxy(display_name):
                     # Check
                     await asyncio.sleep(0.5) # Wait switch
                     res = await self._check_ip_fast(proxy_url, options=options)

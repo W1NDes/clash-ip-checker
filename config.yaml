@@ -1,8 +1,8 @@
 # 爬取任务队列最大值 一个订阅对应一个任务
-max_queue_size: 10  # 最大同时处理的任务数 (建议 5-20)
+max_queue_size: 20  # 最大同时处理的任务数 (建议 5-20)
 
 # 缓存策略
-max_age: 360      # 缓存有效期 (秒), 0 表示不缓存 (每次都重新检测)
+max_age: 7200      # 缓存有效期 (秒), 0 表示不缓存 (每次都重新检测)
 
 
 # 过滤设置
@@ -28,4 +28,9 @@ source: "ping0"
 fallback: true
 
 # 是否显示高级设置
-SHOW_ADVANCED_SETTINGS: false
+SHOW_ADVANCED_SETTINGS: true
+
+# 是否允许同一用户（IP）同时拥有多个检测任务 (True/False), 默认 False
+# False: 同一 IP 只能有一个活跃任务（新任务会自动取消旧任务）
+# True: 同一 IP 可以同时拥有多个任务
+allow_multiple_tasks_per_user: true
