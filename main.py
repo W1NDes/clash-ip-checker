@@ -112,6 +112,71 @@ def save_file_atomic(file_path: str, content: bytes):
             os.remove(tmp_path)
         return False
 
+def strip_old_tag(name: str) -> str:
+    """去除节点名中已有的检测标注 【...】和前缀emoji"""
+    import re
+    name = re.sub(r'\s*【[^】]*】', '', name).strip()
+    name = re.sub(r'^[🟢🟡🟠🔴⚫⚪❓❌⏭️🔘]+\s*', '', name).strip()
+    return name
+
+def merge_old_markings(old_file_path: str, new_content: bytes) -> bytes:
+    """
+    将旧检测结果中的IP标记迁移到新订阅内容中。
+    匹配策略：stripped_name + server + port 三者一致才迁移。
+    """
+    try:
+        with open(old_file_path, 'r', encoding='utf-8') as f:
+            old_data = yaml.safe_load(f)
+        new_data = yaml.safe_load(new_content)
+
+        if not old_data or not new_data:
+            return new_content
+
+        old_proxies = old_data.get('proxies', [])
+        new_proxies = new_data.get('proxies', [])
+
+        if not old_proxies or not new_proxies:
+            return new_content
+
+        # 构建旧标记映射: (stripped_name, server, port) -> marked_name
+        old_marking_map = {}
+        for p in old_proxies:
+            stripped = strip_old_tag(p.get('name', ''))
+            server = str(p.get('server', ''))
+            port = str(p.get('port', ''))
+            old_marking_map[(stripped, server, port)] = p['name']
+
+        # 将旧标记应用到匹配的新节点
+        merged_count = 0
+        for p in new_proxies:
+            original_name = p.get('name', '')
+            stripped = strip_old_tag(original_name)
+            server = str(p.get('server', ''))
+            port = str(p.get('port', ''))
+            key = (stripped, server, port)
+
+            if key in old_marking_map:
+                marked_name = old_marking_map[key]
+                if marked_name != original_name:
+                    p['name'] = marked_name
+                    # 同步更新 proxy-groups 中的引用
+                    if 'proxy-groups' in new_data:
+                        for g in new_data['proxy-groups']:
+                            if 'proxies' in g:
+                                g['proxies'] = [marked_name if pn == original_name else pn for pn in g['proxies']]
+                    merged_count += 1
+
+        if merged_count > 0:
+            print(f"[INFO] Merged {merged_count} old markings into new content", flush=True)
+            return yaml.dump(new_data, allow_unicode=True, default_flow_style=False, sort_keys=False).encode('utf-8')
+        else:
+            print(f"[INFO] No markings to merge (0 matches)", flush=True)
+            return new_content
+
+    except Exception as e:
+        print(f"[WARN] Failed to merge old markings: {e}", flush=True)
+        return new_content
+
 @app.get("/api/config")
 async def get_ui_config():
     """Exposes UI configuration based on environment variables or config.yaml."""
@@ -286,6 +351,14 @@ async def ip_check(
         # Let's keep it simple: Cache is based on Source Content. Re-run overwrites.
         
         map_path = os.path.join(DATA_DIR, f"{url_hash}.map")
+        # 先读取旧 hash，用于后续标记迁移
+        old_content_hash = None
+        if os.path.exists(map_path):
+            try:
+                with open(map_path, 'r') as f:
+                    old_content_hash = f.read().strip()
+            except:
+                pass
         try:
             with open(map_path, 'w') as f:
                 f.write(md5_hash)
@@ -333,9 +406,16 @@ async def ip_check(
         # 7. 队列未满，保存新文件（仅首次请求）
         if not exists:
             print(f"[INFO] New task for {file_name}.", flush=True)
+            # 尝试从旧检测结果迁移标记（name+server+port 三者一致才迁移）
+            content_to_save = content
+            if old_content_hash and old_content_hash != md5_hash:
+                old_file_path = os.path.join(DATA_DIR, f"{old_content_hash}.yaml")
+                if os.path.exists(old_file_path):
+                    print(f"[INFO] Attempting to merge old markings from {old_content_hash}.yaml", flush=True)
+                    content_to_save = merge_old_markings(old_file_path, content)
             # Async Atomic Save
             loop = asyncio.get_running_loop()
-            if not await loop.run_in_executor(None, save_file_atomic, file_path, content):
+            if not await loop.run_in_executor(None, save_file_atomic, file_path, content_to_save):
                 return PlainTextResponse("Internal Write Error", status_code=500)
         else:
             # 缓存过期，保留已有文件，直接重新检测

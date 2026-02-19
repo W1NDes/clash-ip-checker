@@ -232,7 +232,7 @@ class CheckerService:
                 if progress_cb:
                     await progress_cb(checked_count, total, f"Checking: {display_name}")
 
-                if await self.clash.switch_proxy(display_name):
+                if await self.clash.switch_proxy(name):
                     # Check
                     await asyncio.sleep(0.5) # Wait switch
                     res = await self._check_ip_fast(proxy_url, options=options)
